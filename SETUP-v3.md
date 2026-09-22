@@ -44,3 +44,9 @@ Diagnostic endpoint `/api/runtime-check` returns only booleans showing whether b
 - This keeps a Worker invocation well below the previous per-property subrequest pattern.
 - Detail enrichment is intentionally deferred to the property diligence workflow.
 - Sidebar CSS/class mismatch fixed.
+
+
+## v4 Real Evidence Engine
+Run `supabase/migrations/004_real_evidence_engine.sql`.
+The Due Diligence button now creates source-specific research tasks, links official evidence systems, and supports PDF/document evidence metadata.
+Paid/authenticated providers remain credentials-required rather than producing invented results.

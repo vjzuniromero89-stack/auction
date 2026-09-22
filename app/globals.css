@@ -23,3 +23,5 @@ button:disabled{opacity:.55;cursor:not-allowed}.spin{animation:spin 1s linear in
   .fixedSidebar{position:relative !important;width:100% !important;min-width:0 !important;height:auto !important;min-height:auto !important}
   main > .content{margin-left:0 !important;width:100% !important}
 }
+
+.miniSource{display:block;color:#3adbb6!important;text-decoration:none!important;font-size:11px;margin-top:4px}.miniSource:hover{text-decoration:underline!important}
