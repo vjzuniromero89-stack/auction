@@ -56,3 +56,8 @@ Paid/authenticated providers remain credentials-required rather than producing i
 1. Run `005_provider_execution.sql` in Supabase SQL Editor.
 2. Add `ATTOM_API_KEY` as a Cloudflare runtime Secret to enable live property/AVM/comps execution.
 3. PACER is optional and billable; configure only after deciding to use paid production searches.
+
+
+## v4.2 FREE-ONLY
+Run `006_free_only_engine.sql` in Supabase SQL Editor.
+No paid API secrets are required. Paid-provider tasks are disabled.
