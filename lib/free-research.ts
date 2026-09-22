@@ -1,4 +1,4 @@
-import {getSupabaseAdmin} from '@/lib/supabase-admin';import {RESEARCH_SOURCES} from '@/lib/research-sources';
+import {getSupabaseAdmin} from '@/lib/supabase-admin';import {RESEARCH_SOURCES} from '@/lib/research-sources';import {runNewCastleFree} from '@/lib/providers/newcastle-free';
 const checks=['county_property','deed_chain','mortgages','assignments_releases','judgments','state_tax_liens','federal_tax_liens','municipal_tax_water_sewer','hoa_condo','bankruptcy','occupancy','valuation','comparables'];
 export async function runFreeResearch(id:string){
  const db=getSupabaseAdmin();const pq=await db.from('properties').select('*').eq('id',id).single();if(pq.error)throw pq.error;const p=pq.data;
@@ -20,5 +20,17 @@ export async function runFreeResearch(id:string){
    }
  }
  const done=await db.from('free_research_runs').update({status:'complete',sources_checked:count,completed_at:new Date().toISOString(),notes:[{mode:'FREE_ONLY'},{rule:'No paid provider calls. Missing access never becomes NOT FOUND.'}]}).eq('id',rr.data.id);if(done.error)throw done.error;
- return {ok:true,mode:'FREE_ONLY',sources:count,property:{address:p.address,parcel:p.parcel_number,owner:p.owner_name,county:p.county}};
+ let liveCaptured=0;
+ if(p.county==='New Castle'){
+  const live=await runNewCastleFree();
+  for(const x of live){
+   const sourceKey=`free:${x.key}:${p.parcel_number||p.id}`;
+   const payload={label:x.label,httpStatus:x.httpStatus,reachable:x.reachable,excerpt:x.excerpt||null,identifiers:{parcel:p.parcel_number,address:p.address,owner:p.owner_name},note:'Official public source reached. Interactive form results are not represented as searched unless actually returned.'};
+   const ex=await db.from('sources').select('id').eq('property_id',id).eq('source_key',sourceKey).maybeSingle();
+   const row={property_id:id,provider:x.label,source_type:x.type,source_url:x.finalUrl||x.url,external_reference:p.parcel_number||null,verification_status:x.reachable?'source_reachable':'source_unavailable',content_type:x.contentType||'text/html',captured_at:new Date().toISOString(),evidence_note:'Official free public source capture',payload,source_key:sourceKey,query_terms:{parcel:p.parcel_number,address:p.address,owner:p.owner_name}};
+   const q=ex.data?await db.from('sources').update(row).eq('id',ex.data.id):await db.from('sources').insert(row);if(q.error)throw q.error;
+   if(x.reachable)liveCaptured++;
+  }
+ }
+ return {ok:true,mode:'FREE_ONLY',sources:count,liveCaptured,property:{address:p.address,parcel:p.parcel_number,owner:p.owner_name,county:p.county}};
 }

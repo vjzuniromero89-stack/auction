@@ -61,3 +61,8 @@ Paid/authenticated providers remain credentials-required rather than producing i
 ## v4.2 FREE-ONLY
 Run `006_free_only_engine.sql` in Supabase SQL Editor.
 No paid API secrets are required. Paid-provider tasks are disabled.
+
+
+## v4.4 New Castle free connector
+Run `007_free_public_evidence.sql` in Supabase SQL Editor.
+Then deploy and re-run Due Diligence. The banner will report how many official public sources were actually reached.
