@@ -93,222 +93,179 @@ export async function runFreeResearch(id: string) {
     .single();
   if (rr.error) throw rr.error;
 
-  await db
-    .from("research_tasks")
-    .update({ status: "disabled_paid_provider", access_cost: "paid" })
-    .eq("property_id", id)
-    .in("provider", [
-      "attom",
-      "pacer",
-      "first_american",
-      "datatree",
-      "corelogic",
-    ]);
-
-  let taskCount = 0;
+  // Build all checklist/task rows in memory. Avoid one DB request per check/provider.
+  const checkRows: any[] = [];
+  const taskRows: any[] = [];
 
   for (const type of checks) {
     let src = RESEARCH_SOURCES.filter(
-      (s: any) =>
-        (s.kind === type ||
-          (recorderKinds.includes(type) && s.kind === "deed_chain")) &&
-        (!s.counties || s.counties.includes(p.county))
+      (x: any) =>
+        (x.kind === type ||
+          (recorderKinds.includes(type) && x.kind === "deed_chain")) &&
+        (!x.counties || x.counties.includes(p.county))
     );
+    if (type === "judgments") src = RESEARCH_SOURCES.filter((x: any) => x.kind === "judgments");
+    if (type === "flood_risk") src = RESEARCH_SOURCES.filter((x: any) => x.kind === "flood_risk");
 
-    if (type === "judgments") {
-      src = RESEARCH_SOURCES.filter((s: any) => s.kind === "judgments");
-    }
-    if (type === "flood_risk") {
-      src = RESEARCH_SOURCES.filter((s: any) => s.kind === "flood_risk");
-    }
-
-    const status = src.length
-      ? "researching_free"
-      : "free_source_not_configured";
-
-    const result = {
-      mode: "FREE_ONLY",
-      identifiers: {
-        address: p.address,
-        parcel: p.parcel_number,
-        owner: p.owner_name,
-      },
-      sources: src.map((s: any) => ({
-        label: s.label,
-        url: s.url,
-        note: s.note,
-        free: true,
-      })),
-      message: src.length
-        ? "Free-source research queued. VERIFIED/NOT FOUND is used only after an actual result query."
-        : "No reliable $0 source configured; unresolved.",
-    };
-
-    const old = await db
-      .from("due_diligence_checks")
-      .select("id")
-      .eq("property_id", id)
-      .eq("check_type", type)
-      .maybeSingle();
-
-    const row = {
+    checkRows.push({
       property_id: id,
       check_type: type,
-      status,
-      result,
+      status: src.length ? "researching_free" : "free_source_not_configured",
+      result: {
+        mode: "FREE_ONLY",
+        identifiers: { address: p.address, parcel: p.parcel_number, owner: p.owner_name },
+        sources: src.map((x: any) => ({ label: x.label, url: x.url, note: x.note, free: true })),
+        message: src.length
+          ? "Free-source research queued. VERIFIED/NOT FOUND is used only after an actual result query."
+          : "No reliable $0 source configured; unresolved.",
+      },
       source: src.map((x: any) => x.label).join(", ") || "FREE-ONLY research",
       checked_at: null,
-    };
+    });
 
-    if (old.data) {
-      const q = await db
-        .from("due_diligence_checks")
-        .update(row)
-        .eq("id", old.data.id);
-      if (q.error) throw q.error;
-    } else {
-      const q = await db.from("due_diligence_checks").insert(row);
-      if (q.error) throw q.error;
-    }
-
-    for (const s of src as any[]) {
-      const ex = await db
-        .from("research_tasks")
-        .select("id")
-        .eq("property_id", id)
-        .eq("task_type", type)
-        .eq("provider", s.key)
-        .maybeSingle();
-
-      const task = {
+    for (const x of src as any[]) {
+      taskRows.push({
         property_id: id,
         task_type: type,
-        provider: s.key,
+        provider: x.key,
         status: "queued_free",
         access_cost: "free",
-        execution_mode: s.automated ? "automatic" : "manual",
-        query_url: s.url,
+        execution_mode: x.automated ? "automatic" : "manual",
+        query_url: x.url,
         result: {
-          label: s.label,
-          note: s.note,
-          identifiers: {
-            parcel: p.parcel_number,
-            owner: p.owner_name,
-            address: p.address,
-          },
+          label: x.label,
+          note: x.note,
+          identifiers: { parcel: p.parcel_number, owner: p.owner_name, address: p.address },
         },
-      };
-
-      const q = ex.data
-        ? await db.from("research_tasks").update(task).eq("id", ex.data.id)
-        : await db.from("research_tasks").insert(task);
-      if (q.error) throw q.error;
-      taskCount++;
+      });
     }
   }
 
+  // Replace only this property's FREE research rows in batches.
+  const delTasks = await db.from("research_tasks").delete().eq("property_id", id).eq("access_cost", "free");
+  if (delTasks.error) throw delTasks.error;
+  if (taskRows.length) {
+    const ti = await db.from("research_tasks").insert(taskRows);
+    if (ti.error) throw ti.error;
+  }
+
+  const existing = await db.from("due_diligence_checks").select("id,check_type").eq("property_id", id);
+  if (existing.error) throw existing.error;
+  const ids = (existing.data || []).map((x: any) => x.id);
+  if (ids.length) {
+    const dc = await db.from("due_diligence_checks").delete().in("id", ids);
+    if (dc.error) throw dc.error;
+  }
+  const ci = await db.from("due_diligence_checks").insert(checkRows);
+  if (ci.error) throw ci.error;
+
+  // External official-source probes: a small bounded set, then evidence is stored in one DB insert.
   const probes = await probeFreeSources(p.county);
+  const sourceRows: any[] = [];
   let reached = 0;
-
   for (const x of probes as any[]) {
-    await upsertSource(db, id, p, x);
-
-    const tq = await db
-      .from("research_tasks")
-      .update({
-        last_http_status: x.status,
-        last_checked_at: new Date().toISOString(),
-        status: x.reachable ? "manual_review_required" : "source_unavailable",
-        result: { sourceReached: x.reachable, note: x.note },
-      })
-      .eq("property_id", id)
-      .eq("provider", x.key);
-
-    if (tq.error) throw tq.error;
     if (x.reachable) reached++;
+    sourceRows.push({
+      property_id: id,
+      provider: x.label,
+      source_type: x.kind || "public_source",
+      source_url: x.finalUrl || x.url,
+      external_reference: p.parcel_number || null,
+      verification_status: x.reachable ? "source_reachable" : "source_unavailable",
+      content_type: x.contentType || "text/html",
+      captured_at: new Date().toISOString(),
+      evidence_note: x.note || "Official free public source capture",
+      payload: {
+        label: x.label,
+        httpStatus: x.status,
+        reachable: x.reachable,
+        excerpt: x.excerpt || null,
+        identifiers: { parcel: p.parcel_number, address: p.address, owner: p.owner_name },
+      },
+      source_key: `free:${x.key}:${p.parcel_number || p.id}`,
+      query_terms: { parcel: p.parcel_number, address: p.address, owner: p.owner_name },
+    });
   }
 
   let geo: any = null;
   let flood: any = null;
-
-  const full = [p.address, p.city, p.state || "DE", p.zip_code]
-    .filter(Boolean)
-    .join(", ");
-
+  const full = [p.address, p.city, p.state || "DE", p.zip_code].filter(Boolean).join(", ");
   geo = await censusGeocode(full);
 
   if (geo?.lat && geo?.lon) {
-    const uq = await db
-      .from("properties")
-      .update({ latitude: geo.lat, longitude: geo.lon })
-      .eq("id", id);
-    if (uq.error) throw uq.error;
-
-    await upsertSource(db, id, p, {
-      key: "census_geocoder",
-      label: "US Census Geocoder",
-      kind: "location",
-      url: geo.url,
-      finalUrl: geo.url,
-      status: 200,
-      reachable: true,
-      contentType: "application/json",
-      excerpt: geo.matchedAddress,
-      automatedResult: true,
-      note: "Actual free machine geocode completed.",
+    sourceRows.push({
+      property_id: id,
+      provider: "US Census Geocoder",
+      source_type: "location",
+      source_url: geo.url,
+      external_reference: p.parcel_number || null,
+      verification_status: "verified_result",
+      content_type: "application/json",
+      captured_at: new Date().toISOString(),
+      evidence_note: "Actual free machine geocode completed.",
+      payload: { matchedAddress: geo.matchedAddress, lat: geo.lat, lon: geo.lon },
+      source_key: `free:census_geocoder:${p.parcel_number || p.id}`,
+      query_terms: { address: full },
     });
 
     flood = await femaFlood(geo.lat, geo.lon);
-
     if (flood?.ok) {
-      await upsertSource(db, id, p, {
-        key: "fema_nfhl",
-        label: "FEMA National Flood Hazard Layer",
-        kind: "flood_risk",
-        url: flood.url,
-        finalUrl: flood.url,
-        status: flood.status,
-        reachable: true,
-        contentType: "application/json",
-        excerpt: JSON.stringify(flood.features).slice(0, 1600),
-        automatedResult: true,
-        note: "Actual FEMA spatial query completed.",
+      sourceRows.push({
+        property_id: id,
+        provider: "FEMA National Flood Hazard Layer",
+        source_type: "flood_risk",
+        source_url: flood.url,
+        external_reference: p.parcel_number || null,
+        verification_status: "verified_result",
+        content_type: "application/json",
+        captured_at: new Date().toISOString(),
+        evidence_note: "Actual FEMA spatial query completed.",
+        payload: {
+          coordinates: { lat: geo.lat, lon: geo.lon },
+          featureCount: flood.features.length,
+          features: flood.features.slice(0, 5),
+        },
+        source_key: `free:fema_nfhl:${p.parcel_number || p.id}`,
+        query_terms: { lat: geo.lat, lon: geo.lon },
       });
+    }
+  }
 
-      const ck = await db
-        .from("due_diligence_checks")
-        .select("id")
-        .eq("property_id", id)
-        .eq("check_type", "flood_risk")
-        .maybeSingle();
+  // Replace this engine's evidence rows in two DB operations.
+  const sd = await db.from("sources").delete().eq("property_id", id).like("source_key", "free:%");
+  if (sd.error) throw sd.error;
+  if (sourceRows.length) {
+    const si = await db.from("sources").insert(sourceRows);
+    if (si.error) throw si.error;
+  }
 
-      const fres = {
-        coordinates: { lat: geo.lat, lon: geo.lon },
-        featureCount: flood.features.length,
-        features: flood.features.slice(0, 5),
-        source: flood.url,
-      };
+  if (geo?.lat && geo?.lon) {
+    const pu = await db.from("properties").update({ latitude: geo.lat, longitude: geo.lon }).eq("id", id);
+    if (pu.error) throw pu.error;
+  }
 
-      const frow = {
+  if (flood?.ok) {
+    const fu = await db
+      .from("due_diligence_checks")
+      .update({
         status: "verified",
-        result: fres,
+        result: {
+          coordinates: { lat: geo.lat, lon: geo.lon },
+          featureCount: flood.features.length,
+          features: flood.features.slice(0, 5),
+          source: flood.url,
+        },
         source: "FEMA NFHL",
         checked_at: new Date().toISOString(),
-      };
-
-      if (ck.data) {
-        const fq = await db
-          .from("due_diligence_checks")
-          .update(frow)
-          .eq("id", ck.data.id);
-        if (fq.error) throw fq.error;
-      }
-    }
+      })
+      .eq("property_id", id)
+      .eq("check_type", "flood_risk");
+    if (fu.error) throw fu.error;
   }
 
   const summary = {
     mode: "FREE_ONLY",
-    tasks: taskCount,
+    tasks: taskRows.length,
     publicSourcesReached: reached,
     geocoded: !!geo,
     femaQueried: !!flood?.ok,
@@ -319,10 +276,7 @@ export async function runFreeResearch(id: string) {
     ],
   };
 
-  const ps = await db
-    .from("properties")
-    .update({ free_research_summary: summary })
-    .eq("id", id);
+  const ps = await db.from("properties").update({ free_research_summary: summary }).eq("id", id);
   if (ps.error) throw ps.error;
 
   const rs = await db
@@ -340,11 +294,6 @@ export async function runFreeResearch(id: string) {
   return {
     ok: true,
     ...summary,
-    property: {
-      address: p.address,
-      parcel: p.parcel_number,
-      owner: p.owner_name,
-      county: p.county,
-    },
+    property: { address: p.address, parcel: p.parcel_number, owner: p.owner_name, county: p.county },
   };
 }
