@@ -36,3 +36,11 @@ CivilView is auction discovery, not proof of clean title.
 ## v3.1 Cloudflare runtime fix
 Server-side Supabase credentials are read from OpenNext Cloudflare runtime bindings first, with `process.env` only as a local fallback.
 Diagnostic endpoint `/api/runtime-check` returns only booleans showing whether binding names are present; it never returns secret values.
+
+
+## v3.2 Cloudflare subrequest fix
+- CivilView scanner no longer opens every auction detail page in the initial scan.
+- Initial scan uses listing pages only and batches Supabase reads/writes.
+- This keeps a Worker invocation well below the previous per-property subrequest pattern.
+- Detail enrichment is intentionally deferred to the property diligence workflow.
+- Sidebar CSS/class mismatch fixed.
