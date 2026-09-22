@@ -93,3 +93,16 @@ Deploy command:
 `npx wrangler deploy`
 
 No configures `npm run build` como Build command de Cloudflare, porque ese script se reserva para el build interno de Next.js que OpenNext invoca.
+
+
+## v2 — Live Delaware auction scanner
+
+1. Run `supabase/migrations/002_live_auction_scanner.sql` in Supabase SQL Editor.
+2. In Cloudflare Variables & Secrets add `SUPABASE_SERVICE_ROLE_KEY` as a **Secret**. Never prefix this key with `NEXT_PUBLIC_`.
+3. Keep your existing `NEXT_PUBLIC_SUPABASE_URL` and public/anon key.
+4. Deploy. The `Scan Auctions` button calls the server-side scanner, discovers CivilView's Delaware county listings, and stores them in Supabase.
+5. CivilView is treated only as auction discovery. The app does not fabricate title, mortgage balance, market value, or maximum bid before those stages have evidence.
+
+Cloudflare:
+- Build command: `npm run build:cloudflare`
+- Deploy command: `npx wrangler deploy`
