@@ -56,3 +56,28 @@ Cloudflare configuration files included:
 - `wrangler.jsonc`
 
 Do not use plain `npx wrangler deploy` as the only deploy command for this Next.js app.
+
+
+## Cloudflare build setting (important)
+
+For Cloudflare, keep the dashboard build command as:
+
+```bash
+npm run build
+```
+
+This project now maps that command to:
+
+```bash
+opennextjs-cloudflare build
+```
+
+which creates the required `.open-next` deployment artifact.
+
+The deploy command can remain:
+
+```bash
+npx wrangler deploy
+```
+
+Wrangler will detect the OpenNext project and deploy the compiled artifact.
