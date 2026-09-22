@@ -50,3 +50,9 @@ Diagnostic endpoint `/api/runtime-check` returns only booleans showing whether b
 Run `supabase/migrations/004_real_evidence_engine.sql`.
 The Due Diligence button now creates source-specific research tasks, links official evidence systems, and supports PDF/document evidence metadata.
 Paid/authenticated providers remain credentials-required rather than producing invented results.
+
+
+## v4.1 Provider execution
+1. Run `005_provider_execution.sql` in Supabase SQL Editor.
+2. Add `ATTOM_API_KEY` as a Cloudflare runtime Secret to enable live property/AVM/comps execution.
+3. PACER is optional and billable; configure only after deciding to use paid production searches.
