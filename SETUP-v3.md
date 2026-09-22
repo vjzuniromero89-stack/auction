@@ -31,3 +31,8 @@ The app deploys without optional provider credentials. It never interprets an un
 FOUND, VERIFIED, NOT FOUND, PENDING, MANUAL REVIEW REQUIRED are distinct states.
 “Not found” should only be used after the relevant source was actually searched.
 CivilView is auction discovery, not proof of clean title.
+
+
+## v3.1 Cloudflare runtime fix
+Server-side Supabase credentials are read from OpenNext Cloudflare runtime bindings first, with `process.env` only as a local fallback.
+Diagnostic endpoint `/api/runtime-check` returns only booleans showing whether binding names are present; it never returns secret values.
