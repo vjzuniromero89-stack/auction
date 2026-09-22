@@ -37,3 +37,22 @@ Import the GitHub repository into Vercel, add the environment variables, and dep
 
 ## Important
 This application is a due-diligence assistant, not a title insurance product or legal opinion. Never treat an estimated mortgage balance as a payoff amount. Provider results should retain source, retrieval date, document reference and verification state.
+
+
+## Cloudflare Workers deployment
+
+This project is preconfigured for Cloudflare Workers through OpenNext.
+
+Recommended deploy command:
+
+```bash
+npm run deploy
+```
+
+Cloudflare configuration files included:
+
+- `next.config.mjs`
+- `open-next.config.ts`
+- `wrangler.jsonc`
+
+Do not use plain `npx wrangler deploy` as the only deploy command for this Next.js app.

@@ -1,1 +1,29 @@
-{"name":"delaware-auction-intelligence","version":"0.1.0","private":true,"scripts":{"dev":"next dev","build":"next build","start":"next start"},"dependencies":{"@supabase/ssr":"0.7.0","@supabase/supabase-js":"2.57.4","lucide-react":"0.468.0","next":"15.5.3","react":"19.1.0","react-dom":"19.1.0"},"devDependencies":{"@types/node":"22.10.2","@types/react":"19.0.6","@types/react-dom":"19.0.2","typescript":"5.7.2"}}
+{
+  "name": "delaware-auction-intelligence",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.7.0",
+    "@supabase/supabase-js": "2.57.4",
+    "lucide-react": "0.468.0",
+    "next": "15.5.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/react": "19.0.6",
+    "@types/react-dom": "19.0.2",
+    "typescript": "5.7.2",
+    "@opennextjs/cloudflare": "1.14.8",
+    "wrangler": "4.136.2"
+  }
+}
