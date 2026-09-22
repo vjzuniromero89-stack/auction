@@ -81,3 +81,15 @@ npx wrangler deploy
 ```
 
 Wrangler will detect the OpenNext project and deploy the compiled artifact.
+
+## Cloudflare — configuración definitiva
+
+En Cloudflare Workers & Pages configura:
+
+Build command:
+`npm run build:cloudflare`
+
+Deploy command:
+`npx wrangler deploy`
+
+No configures `npm run build` como Build command de Cloudflare, porque ese script se reserva para el build interno de Next.js que OpenNext invoca.
