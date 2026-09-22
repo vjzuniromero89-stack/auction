@@ -1,52 +1,8 @@
-import { NextResponse } from 'next/server';
-import { scanCivilView } from '@/lib/civilview';
-import { getSupabaseAdmin } from '@/lib/supabase-admin';
-
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-function cityFromAddress(address:string){
-  const m=address.match(/\s([A-Za-z .'-]+)\s+DE\s+\d{5}\s*$/i);
-  return m ? m[1].trim().replace(/\b\w/g,c=>c.toUpperCase()) : '';
-}
-export async function POST(){
-  try{
-    const db=getSupabaseAdmin();
-    const scan=await scanCivilView();
-    let saved=0, updated=0;
-    for(const s of scan.sales){
-      let property:any=null;
-      if(s.parcelNumber){
-        const q=await db.from('properties').select('id').eq('county',s.county).eq('parcel_number',s.parcelNumber).maybeSingle();
-        property=q.data;
-      }
-      if(!property){
-        const q=await db.from('properties').select('id').eq('county',s.county).eq('address',s.address).maybeSingle();
-        property=q.data;
-      }
-      if(!property){
-        const ins=await db.from('properties').insert({
-          address:s.address, city:cityFromAddress(s.address), county:s.county,
-          parcel_number:s.parcelNumber||null, owner_name:s.defendant||null
-        }).select('id').single();
-        if(ins.error) throw ins.error;
-        property=ins.data; saved++;
-      } else updated++;
-      const auction=await db.from('auctions').upsert({
-        property_id:property.id, source:'CivilView', sheriff_number:s.sheriffNumber,
-        sale_date:s.saleDate, plaintiff:s.plaintiff, defendant:s.defendant,
-        status:s.status.toLowerCase(), source_url:s.sourceUrl, retrieved_at:new Date().toISOString()
-      },{onConflict:'source,sheriff_number'});
-      if(auction.error) throw auction.error;
-      await db.from('sources').insert({
-        property_id:property.id, provider:'CivilView', source_type:'auction_listing',
-        source_url:s.sourceUrl, external_reference:s.sheriffNumber,
-        verification_status:'source_record',
-        payload:{county:s.county,status:s.status,attorney:s.attorney||null,parcel:s.parcelNumber||null}
-      });
-    }
-    return NextResponse.json({ok:true,found:scan.sales.length,newProperties:saved,matchedProperties:updated,errors:scan.errors,scannedAt:scan.scannedAt});
-  }catch(e:any){
-    return NextResponse.json({ok:false,error:e?.message||'Scan failed'},{status:500});
-  }
-}
+import {NextResponse} from 'next/server';import {scanCivilView} from '@/lib/civilview';import {getSupabaseAdmin} from '@/lib/supabase-admin';
+export const dynamic='force-dynamic';
+const city=(a:string)=>{const m=a.match(/\s([A-Za-z .'-]+)\s+DE\s+(\d{5})\s*$/i);return {city:m?.[1]?.trim()||'',zip:m?.[2]||''}};
+export async function POST(){try{const db=getSupabaseAdmin(),scan=await scanCivilView();let created=0,updated=0;for(const s of scan.sales){let p:any=null;if(s.parcelNumber){p=(await db.from('properties').select('id').eq('county',s.county).eq('parcel_number',s.parcelNumber).maybeSingle()).data}if(!p)p=(await db.from('properties').select('id').eq('county',s.county).eq('address',s.address).maybeSingle()).data;const loc=city(s.address);if(!p){const q=await db.from('properties').insert({address:s.address,city:loc.city,zip_code:loc.zip,county:s.county,parcel_number:s.parcelNumber||null,owner_name:s.defendant||null}).select('id').single();if(q.error)throw q.error;p=q.data;created++}else{updated++;await db.from('properties').update({parcel_number:s.parcelNumber||undefined,owner_name:s.defendant||undefined,city:loc.city||undefined,zip_code:loc.zip||undefined,updated_at:new Date().toISOString()}).eq('id',p.id)}
+ const existing=await db.from('auctions').select('id').eq('source','CivilView').eq('sheriff_number',s.sheriffNumber).maybeSingle();const payload={property_id:p.id,source:'CivilView',sheriff_number:s.sheriffNumber,sale_date:s.saleDate,plaintiff:s.plaintiff,defendant:s.defendant,status:s.status.toLowerCase(),source_url:s.sourceUrl,retrieved_at:new Date().toISOString(),attorney:s.attorney||null,upset_price:s.upsetPrice||null,occupancy_status:s.occupancyStatus||null,property_note:s.propertyNote||null};if(existing.data)await db.from('auctions').update(payload).eq('id',existing.data.id);else await db.from('auctions').insert(payload);
+ await db.from('sources').insert({property_id:p.id,provider:'CivilView',source_type:'auction_listing',source_url:s.sourceUrl,external_reference:s.sheriffNumber,verification_status:'source_record',payload:s});
+ }await db.from('provider_events').insert({provider:'CivilView',event_type:'scan',status:scan.errors.length?'partial':'success',message:`${scan.sales.length} listings`,metadata:{errors:scan.errors}});
+ return NextResponse.json({ok:true,found:scan.sales.length,newProperties:created,matchedProperties:updated,errors:scan.errors,scannedAt:scan.scannedAt})}catch(e:any){return NextResponse.json({ok:false,error:e?.message||'Scan failed'},{status:500})}}

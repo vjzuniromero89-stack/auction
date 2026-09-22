@@ -1,103 +1,15 @@
-const HOME = 'https://salesweb.civilview.com/';
-const KNOWN: Record<string,string> = {
-  'New Castle': 'https://salesweb.civilview.com/Sales/SalesSearch?countyId=24',
-  'Sussex': 'https://salesweb.civilview.com/Sales/SalesSearch?countyId=12'
+const HOME='https://salesweb.civilview.com/';
+const KNOWN:Record<string,string>={
+ 'New Castle':'https://salesweb.civilview.com/Sales/SalesSearch?countyId=24',
+ 'Sussex':'https://salesweb.civilview.com/Sales/SalesSearch?countyId=12'
 };
-
-export type CivilViewSale = {
-  county: 'New Castle'|'Kent'|'Sussex';
-  status: string;
-  saleDate: string|null;
-  sheriffNumber: string;
-  attorney?: string;
-  plaintiff: string;
-  parcelNumber?: string;
-  defendant: string;
-  address: string;
-  sourceUrl: string;
-};
-
-function text(html:string) {
-  return html.replace(/<br\s*\/?>/gi,' ')
-    .replace(/<[^>]+>/g,' ')
-    .replace(/&nbsp;/gi,' ')
-    .replace(/&amp;/gi,'&')
-    .replace(/&#x27;|&#39;/gi,"'")
-    .replace(/&quot;/gi,'"')
-    .replace(/\s+/g,' ').trim();
-}
-function abs(href:string, base:string) {
-  try { return new URL(href, base).toString(); } catch { return base; }
-}
-async function fetchHtml(url:string) {
-  const r = await fetch(url, {
-    headers: {'user-agent':'DelawareAuctionIntelligence/1.0 (+private research tool)','accept':'text/html'}
-  });
-  if (!r.ok) throw new Error(`CivilView ${r.status} for ${url}`);
-  return r.text();
-}
-async function discoverKent(): Promise<string> {
-  const html = await fetchHtml(HOME);
-  const anchors = [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];
-  const hit = anchors.find(m => /Kent County,\s*DE/i.test(text(m[2])));
-  if (!hit) throw new Error('Kent County CivilView link was not discovered');
-  return abs(hit[1], HOME);
-}
-function parseDate(raw:string): string|null {
-  const m = raw.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM))?/i);
-  if (!m) return null;
-  let hour = Number(m[4]||'12');
-  if (m[6]?.toUpperCase()==='PM' && hour<12) hour += 12;
-  if (m[6]?.toUpperCase()==='AM' && hour===12) hour = 0;
-  const mm=String(m[1]).padStart(2,'0'), dd=String(m[2]).padStart(2,'0'), hh=String(hour).padStart(2,'0');
-  return `${m[3]}-${mm}-${dd}T${hh}:${m[5]||'00'}:00-04:00`;
-}
-function parseTable(html:string, county:CivilViewSale['county'], pageUrl:string): CivilViewSale[] {
-  const rows = [...html.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)];
-  let headers:string[]=[];
-  const out:CivilViewSale[]=[];
-  for (const row of rows) {
-    const hs=[...row[1].matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)].map(x=>text(x[1]).toLowerCase());
-    if (hs.length) { headers=hs; continue; }
-    const tds=[...row[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)];
-    if (!tds.length) continue;
-    const vals=tds.map(x=>text(x[1]));
-    const get=(...names:string[])=>{
-      const i=headers.findIndex(h=>names.some(n=>h.includes(n)));
-      return i>=0 ? vals[i]||'' : '';
-    };
-    const sheriff=get('sheriff');
-    const address=get('address');
-    if (!sheriff || !address) continue;
-    const hrefs=[...row[1].matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi)].map(x=>x[1]);
-    const detail=hrefs.find(h=>/SaleDetails|PropertyId/i.test(h));
-    out.push({
-      county,
-      status:get('status') || 'Scheduled',
-      saleDate:parseDate(get('sale date','sales date')),
-      sheriffNumber:sheriff,
-      attorney:get('attorney') || undefined,
-      plaintiff:get('plaintiff'),
-      parcelNumber:get('parcel') || undefined,
-      defendant:get('defendant'),
-      address,
-      sourceUrl: detail ? abs(detail,pageUrl) : pageUrl
-    });
-  }
-  return out;
-}
-export async function scanCivilView() {
-  const kent = await discoverKent();
-  const urls: Record<CivilViewSale['county'],string> = {...KNOWN, Kent:kent} as any;
-  const counties = Object.entries(urls) as [CivilViewSale['county'],string][];
-  const settled = await Promise.allSettled(counties.map(async ([county,url])=>{
-    const html=await fetchHtml(url);
-    return {county,url,sales:parseTable(html,county,url)};
-  }));
-  const sales:CivilViewSale[]=[]; const errors:string[]=[];
-  settled.forEach((r,i)=>{
-    if(r.status==='fulfilled') sales.push(...r.value.sales);
-    else errors.push(`${counties[i][0]}: ${String(r.reason?.message||r.reason)}`);
-  });
-  return {sales,errors,scannedAt:new Date().toISOString()};
-}
+export type CivilViewSale={county:'New Castle'|'Kent'|'Sussex';status:string;saleDate:string|null;sheriffNumber:string;attorney?:string;plaintiff:string;parcelNumber?:string;defendant:string;address:string;sourceUrl:string;upsetPrice?:number|null;occupancyStatus?:string;propertyNote?:string;statusHistory?:any[]};
+const clean=(h:string)=>h.replace(/<script[\s\S]*?<\/script>/gi,' ').replace(/<style[\s\S]*?<\/style>/gi,' ').replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,' ').replace(/&nbsp;/gi,' ').replace(/&amp;/gi,'&').replace(/&#x27;|&#39;/gi,"'").replace(/&quot;/gi,'"').replace(/\s+/g,' ').trim();
+const abs=(h:string,b:string)=>{try{return new URL(h,b).toString()}catch{return b}};
+async function html(url:string){const r=await fetch(url,{headers:{'user-agent':'DelawareAuctionIntelligence/1.0 private-research','accept':'text/html'}});if(!r.ok)throw new Error(`CivilView ${r.status}`);return r.text()}
+async function kent(){const h=await html(HOME);const a=[...h.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)];const x=a.find(m=>/Kent County,\s*DE/i.test(clean(m[2])));if(!x)throw new Error('Kent County CivilView link not discovered');return abs(x[1],HOME)}
+function dt(s:string){const m=s.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})\s*(AM|PM))?/i);if(!m)return null;let h=Number(m[4]||12);if(m[6]?.toUpperCase()==='PM'&&h<12)h+=12;if(m[6]?.toUpperCase()==='AM'&&h===12)h=0;return `${m[3]}-${String(m[1]).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}T${String(h).padStart(2,'0')}:${m[5]||'00'}:00-04:00`}
+function money(s:string){const m=s.match(/\$\s*([\d,]+(?:\.\d{1,2})?)/);return m?Number(m[1].replace(/,/g,'')):null}
+function rows(h:string,county:CivilViewSale['county'],url:string){let heads:string[]=[];const out:CivilViewSale[]=[];for(const rm of h.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)){const hs=[...rm[1].matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/gi)].map(x=>clean(x[1]).toLowerCase());if(hs.length){heads=hs;continue}const cells=[...rm[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)];if(!cells.length)continue;const v=cells.map(x=>clean(x[1]));const get=(...n:string[])=>{const i=heads.findIndex(h=>n.some(z=>h.includes(z)));return i>=0?v[i]||'':''};const sheriff=get('sheriff');const address=get('address');if(!sheriff||!address)continue;const hrefs=[...rm[1].matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi)].map(x=>x[1]);const detail=hrefs.find(x=>/SaleDetails|PropertyId/i.test(x));out.push({county,status:get('status')||'Scheduled',saleDate:dt(get('sale date','sales date')),sheriffNumber:sheriff,attorney:get('attorney')||undefined,plaintiff:get('plaintiff'),parcelNumber:get('parcel')||undefined,defendant:get('defendant'),address,sourceUrl:detail?abs(detail,url):url})}return out}
+async function detail(s:CivilViewSale){if(!/SaleDetails|PropertyId/i.test(s.sourceUrl))return s;try{const h=await html(s.sourceUrl);const t=clean(h);const upset=t.match(/(?:Approx\.?\s*Upset|Upset Price)\s*:?\s*(\$[\d,.]+)/i);const occ=t.match(/Occupancy Status\s*:?\s*([A-Za-z ]{3,30})/i);const parcel=t.match(/Parcel\s*#\s*:?\s*([A-Za-z0-9 .\-]+)/i);const note=t.match(/Property Note\s*:?\s*(.{0,1200}?)(?:Status History|To be sold by|$)/i);return {...s,upsetPrice:upset?money(upset[1]):null,occupancyStatus:occ?.[1]?.trim(),parcelNumber:s.parcelNumber||parcel?.[1]?.trim(),propertyNote:note?.[1]?.trim()}}catch{return s}}
+export async function scanCivilView(){const urls:any={...KNOWN,Kent:await kent()};const entries=Object.entries(urls) as [CivilViewSale['county'],string][];const results=await Promise.allSettled(entries.map(async([county,url])=>{const list=rows(await html(url),county,url);const enriched=[];for(const s of list){enriched.push(await detail(s))}return enriched}));const sales:CivilViewSale[]=[];const errors:string[]=[];results.forEach((r,i)=>r.status==='fulfilled'?sales.push(...r.value):errors.push(`${entries[i][0]}: ${String((r as any).reason?.message||(r as any).reason)}`));return {sales,errors,scannedAt:new Date().toISOString()}}
