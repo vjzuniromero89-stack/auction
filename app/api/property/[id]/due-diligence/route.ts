@@ -1,2 +1,3 @@
-import {NextResponse} from 'next/server';import {getSupabaseAdmin} from '@/lib/supabase-admin';
-export async function POST(req:Request,{params}:{params:Promise<{id:string}>}){const {id}=await params;try{const u=new URL(req.url);const target=new URL(`/api/property/${id}/free-research`,u.origin);const r=await fetch(target,{method:'POST',headers:{cookie:req.headers.get('cookie')||''}});const j=await r.json();return NextResponse.json(j,{status:r.status})}catch(e:any){return NextResponse.json({ok:false,error:e.message},{status:500})}}
+import {NextResponse} from 'next/server';import {runFreeResearch} from '@/lib/free-research';
+export const dynamic='force-dynamic';
+export async function POST(_:Request,{params}:{params:Promise<{id:string}>}){try{const {id}=await params;return NextResponse.json(await runFreeResearch(id))}catch(e:any){return NextResponse.json({ok:false,error:e?.message||String(e)},{status:500})}}
